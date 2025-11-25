@@ -1,5 +1,6 @@
 {
   "name": "document-pre-proxy",
+  "type":"module",
   "version": "1.0.0",
   "main": "src/upload_proxy.js",
   "dependencies": {

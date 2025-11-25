@@ -11,11 +11,11 @@
  * - For very large files use a streaming approach (see notes below).
  */
 
-const express = require("express");
-const Busboy = require("busboy");
-const FormData = require("form-data");
-const fetch = require("node-fetch"); // v2 API; install node-fetch@2
-const pino = require("pino");
+import express from "express";
+import Busboy from "busboy";
+import FormData from "form-data";
+import pino from "pino";
+import { fetch } from "undici";
 
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
