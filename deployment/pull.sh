@@ -34,6 +34,6 @@ fi
 echo "✅ Image successfully pulled:"
 echo "   ghcr.io/$GITHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
 echo "You can now run it with:"
-echo "   docker run -d --name document-pre-proxy ghcr.io/$GITHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
+echo "   docker run -d --name document-pre-proxy -e PAPERLESS_UPSTREAM="http://someIP" -e PORT="5000" -p 5000:5000 ghcr.io/$GITHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
 
 exit 0
