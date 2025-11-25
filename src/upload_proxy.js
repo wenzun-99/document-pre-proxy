@@ -19,14 +19,14 @@ import { fetch } from "undici";
 
 const logger = pino({ level: process.env.LOG_LEVEL || "info" });
 
-const UPSTREAM = process.env.PAPERLESS_UPSTREAM || "http://localhost:8000";
+const UPSTREAM = process.env.PAPERLESS_UPSTREAM || "http://localhost:8001";
 const HEADER = "---BEGIN JSON-----";
 const FOOTER = "---END JSON-----";
 const MAX_SNIFF = 4096; // bytes to inspect for JSON detection
 
 const app = express();
 
-function looksLikeJsonBuffer(buf) {
+const looksLikeJsonBuffer = (buf) => {
   if (!buf || buf.length === 0) return false;
   // skip leading whitespace
   let i = 0;
@@ -38,17 +38,17 @@ function looksLikeJsonBuffer(buf) {
   if (i >= buf.length) return false;
   const first = buf[i];
   return first === 0x7b /*{*/ || first === 0x5b /*[*/;
-}
+};
 
 // Helper to read stream into buffer (returns Promise<Buffer>)
-function streamToBuffer(stream) {
+const streamToBuffer = (stream) => {
   return new Promise((resolve, reject) => {
     const chunks = [];
     stream.on("data", (c) => chunks.push(c));
     stream.on("end", () => resolve(Buffer.concat(chunks)));
     stream.on("error", (err) => reject(err));
   });
-}
+};
 
 app.use(async (req, res) => {
   try {
