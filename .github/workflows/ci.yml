@@ -3,7 +3,7 @@ name: CI - Build and Push Docker Image
 # Trigger on pushes to main branch (change to your branch name if different)
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch: {}
 
 # Need permission to push packages when using GITHUB_TOKEN
@@ -49,7 +49,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ steps.auth.outputs.token }}
 
-      - name: Buildx: build and push
+      - name: "Buildx: build and push"
         uses: docker/build-push-action@v5
         with:
           context: ${{ env.BUILD_CONTEXT }}
@@ -69,4 +69,3 @@ jobs:
       - name: Show built image
         run: |
           echo "Built and pushed image: ${{ env.IMAGE_REGISTRY }}/${{ env.IMAGE_REPO }}:${{ github.sha }}"
-
