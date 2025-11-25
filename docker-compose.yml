@@ -1,0 +1,17 @@
+version: "3.8"
+services:
+  upload_proxy:
+    build: .
+    image: wenzun-99/document-pre-proxy:latest
+    environment:
+      - PAPERLESS_UPSTREAM=${PAPERLESS_UPSTREAM:-http://localhost:8001}
+      - PORT=${PORT:-5000}
+    ports:
+      - "${PORT:-5000}:5000"
+    restart: unless-stopped
+    networks:
+      - internal
+
+networks:
+  internal:
+    external: false

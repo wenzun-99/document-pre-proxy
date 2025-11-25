@@ -1,0 +1,12 @@
+{
+  "name": "document-pre-proxy",
+  "version": "1.0.0",
+  "main": "src/upload_proxy.js",
+  "dependencies": {
+    "express": "^5.1.0",
+    "busboy": "^1.6.0",
+    "form-data": "^4.0.5",
+    "pino": "^10.1.0",
+    "undici": "^7.16.0"
+  }
+}
