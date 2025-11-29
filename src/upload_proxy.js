@@ -180,23 +180,57 @@ app.use(async (req, res) => {
       bb.on("finish", async () => {
         try {
           await Promise.all(filePromises);
+
           // Build fetch options. Note: form.getHeaders() returns correct multipart headers.
-          const headers = { ...forwardHeaders, ...form.getHeaders() };
+          const formHeaders = form.getHeaders();
+          const headers = { ...forwardHeaders, ...formHeaders };
 
           // Forward cookies if present
           if (req.headers.cookie) headers["cookie"] = req.headers.cookie;
 
+          // Try to get Content-Length from the form. If available, set it so upstream gets a proper length.
+          try {
+            const len = await new Promise((resolve, reject) => {
+              form.getLength((err, length) => {
+                if (err) return reject(err);
+                resolve(length);
+              });
+            });
+            // Only set content-length if we got a numeric length
+            if (typeof len === "number") {
+              headers["content-length"] = String(len);
+              logger.info(
+                { length: len },
+                "Form length determined and set on headers"
+              );
+            }
+          } catch (err) {
+            // Some streams can't determine length. Log a warning.
+            logger.warn(
+              { err },
+              "Could not determine multipart form length; proceeding chunked"
+            );
+          }
+
+          try {
+            logger.info(
+              { outgoingHeaders: headers, fileCount: filePromises.length },
+              "Forwarding multipart to upstream"
+            );
+          } catch (e) {
+            logger.warn({ e }, "Failed to log form internals");
+          }
+
+          // Forward to upstream using undici fetch
           const upstreamResp = await fetch(upstreamUrl, {
             method: req.method,
             headers,
             body: form,
             redirect: "manual",
-            // optionally set timeout / agent
           });
 
           // Relay status and headers
           upstreamResp.headers.forEach((v, k) => {
-            // skip hop-by-hop headers
             if (
               [
                 "content-encoding",
@@ -209,6 +243,8 @@ app.use(async (req, res) => {
             res.setHeader(k, v);
           });
           res.status(upstreamResp.status);
+
+          // undici returns arrayBuffer; convert to Buffer
           const arrayBuf = await upstreamResp.arrayBuffer();
           const bodyBuffer = Buffer.from(arrayBuf);
           res.send(bodyBuffer);
