@@ -104,14 +104,33 @@ app.use(async (req, res) => {
       });
 
       bb.on("file", (fieldname, fileStream, filename, encoding, mimetype) => {
-        // push a promise to handle this file
         const p = (async () => {
           try {
-            // read a small prefix to sniff for JSON. Because busboy gives us a stream, we need to buffer.
+            // Some busboy variants pass file info as an object. Normalize.
+            // If 'filename' is an object, extract fields; otherwise use as-is.
+            let realFilename = "upload";
+            let realMimetype = mimetype || "application/octet-stream";
+            let realEncoding = encoding || "7bit";
+
+            if (filename && typeof filename === "object") {
+              // Common shapes: { filename, encoding, mimeType } or { filename, mimeType }
+              realFilename = filename.filename || filename.name || realFilename;
+              realMimetype =
+                filename.mimeType || filename.mimetype || realMimetype;
+              realEncoding = filename.encoding || realEncoding;
+            } else if (typeof filename === "string" && filename.length) {
+              realFilename = filename;
+            }
+
+            // Read entire file stream into buffer (existing logic)
             const buf = await streamToBuffer(fileStream);
             const sniff = buf.slice(0, MAX_SNIFF);
+
             let rewrite = false;
-            if (mimetype && mimetype.toLowerCase() === "application/json") {
+            if (
+              realMimetype &&
+              realMimetype.toLowerCase() === "application/json"
+            ) {
               rewrite = true;
             } else if (looksLikeJsonBuffer(sniff)) {
               rewrite = true;
@@ -119,24 +138,27 @@ app.use(async (req, res) => {
 
             if (rewrite) {
               logger.info(
-                { field: fieldname, filename, mimetype },
+                {
+                  field: fieldname,
+                  filename: realFilename,
+                  mimetype: realMimetype,
+                },
                 "Rewriting JSON file part -> text/plain"
               );
-              // wrap bytes with header and footer. Keep raw bytes exactly as-is between markers.
               const wrapped = Buffer.concat([
                 Buffer.from(HEADER + "\n", "utf8"),
                 buf,
                 Buffer.from("\n" + FOOTER + "\n", "utf8"),
               ]);
               form.append(fieldname, wrapped, {
-                filename: filename || "upload",
+                filename: realFilename,
                 contentType: "text/plain",
               });
             } else {
               // append original bytes with original mimetype
               form.append(fieldname, buf, {
-                filename: filename || "upload",
-                contentType: mimetype || "application/octet-stream",
+                filename: realFilename,
+                contentType: realMimetype || "application/octet-stream",
               });
             }
           } catch (err) {
