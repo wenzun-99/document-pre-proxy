@@ -221,13 +221,46 @@ app.use(async (req, res) => {
             logger.warn({ e }, "Failed to log form internals");
           }
 
-          // Forward to upstream using undici fetch
-          const upstreamResp = await fetch(upstreamUrl, {
-            method: req.method,
-            headers,
-            body: form,
-            redirect: "manual",
-          });
+          let upstreamResp;
+          try {
+            upstreamResp = await fetch(upstreamUrl, {
+              method: req.method,
+              headers,
+              body: form,
+              redirect: "manual",
+            });
+          } catch (err) {
+            const msg = String(err && err.message ? err.message : err);
+            if (
+              msg.includes(
+                "Request body length does not match content-length header"
+              ) ||
+              msg.includes("RequestContentLengthMismatchError") ||
+              msg.includes("body length does not match")
+            ) {
+              logger.warn(
+                { err, headers },
+                "Content-Length mismatch; retrying without content-length (chunked)"
+              );
+              delete headers["content-length"];
+              try {
+                upstreamResp = await fetch(upstreamUrl, {
+                  method: req.method,
+                  headers,
+                  body: form,
+                  redirect: "manual",
+                });
+              } catch (err2) {
+                logger.error(
+                  { err2 },
+                  "Retry without content-length also failed"
+                );
+                throw err2; // will be caught by outer try/catch
+              }
+            } else {
+              throw err;
+            }
+          }
 
           // Relay status and headers
           upstreamResp.headers.forEach((v, k) => {
