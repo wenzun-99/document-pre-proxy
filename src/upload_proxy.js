@@ -11,8 +11,11 @@
  * - For very large files use a streaming approach (see notes below).
  */
 
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const Busboy = require("busboy");
+
 import express from "express";
-import Busboy from "busboy";
 import FormData from "form-data";
 import pino from "pino";
 import { fetch } from "undici";
