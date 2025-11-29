@@ -179,6 +179,7 @@ app.use(async (req, res) => {
 
       bb.on("finish", async () => {
         try {
+          // --- after await Promise.all(filePromises);
           await Promise.all(filePromises);
 
           // Build fetch options. Note: form.getHeaders() returns correct multipart headers.
@@ -188,7 +189,10 @@ app.use(async (req, res) => {
           // Forward cookies if present
           if (req.headers.cookie) headers["cookie"] = req.headers.cookie;
 
-          // Try to get Content-Length from the form. If available, set it so upstream gets a proper length.
+          // Try to compute length and also try to get a full Buffer of the form (safe when all parts are Buffers)
+          let bodyToSend = form;
+          let setContentLength = false;
+
           try {
             const len = await new Promise((resolve, reject) => {
               form.getLength((err, length) => {
@@ -196,40 +200,74 @@ app.use(async (req, res) => {
                 resolve(length);
               });
             });
-            // Only set content-length if we got a numeric length
-            if (typeof len === "number") {
-              headers["content-length"] = String(len);
-              logger.info(
-                { length: len },
-                "Form length determined and set on headers"
+
+            logger.info({ length: len }, "Form length determined");
+
+            // Try to get a single Buffer representation (works when all parts are in-memory/buffers)
+            try {
+              if (typeof form.getBuffer === "function") {
+                const buf = form.getBuffer();
+                if (Buffer.isBuffer(buf) && buf.length > 0) {
+                  // Use buffer as the body — this is deterministic and avoids streaming/consumption issues
+                  bodyToSend = buf;
+                  headers["content-length"] = String(buf.length);
+                  setContentLength = true;
+                  logger.info(
+                    { bufLength: buf.length },
+                    "Using buffered multipart body"
+                  );
+                } else {
+                  // fallback: use stream but set content-length (we will remove it if mismatch occurs)
+                  headers["content-length"] = String(len);
+                  setContentLength = true;
+                  bodyToSend = form;
+                  logger.info(
+                    "Buffer returned empty or invalid; will stream but set content-length for now"
+                  );
+                }
+              } else {
+                // no getBuffer available: stream and do not set content-length to avoid mismatch
+                bodyToSend = form;
+                logger.info(
+                  "form.getBuffer not available; streaming without content-length"
+                );
+              }
+            } catch (errBuf) {
+              // getBuffer failed; fallback to streaming without content-length
+              bodyToSend = form;
+              if (headers["content-length"]) delete headers["content-length"];
+              logger.warn(
+                { errBuf },
+                "form.getBuffer failed; will stream without content-length"
               );
             }
-          } catch (err) {
-            // Some streams can't determine length. Log a warning.
+          } catch (errLen) {
+            // couldn't determine length; stream chunked (no content-length)
+            if (headers["content-length"]) delete headers["content-length"];
+            bodyToSend = form;
             logger.warn(
-              { err },
-              "Could not determine multipart form length; proceeding chunked"
+              { errLen },
+              "Could not determine form length; proceeding chunked"
             );
           }
 
-          try {
-            logger.info(
-              { outgoingHeaders: headers, fileCount: filePromises.length },
-              "Forwarding multipart to upstream"
-            );
-          } catch (e) {
-            logger.warn({ e }, "Failed to log form internals");
-          }
+          // Logging outgoing headers & field count for diagnostics
+          logger.info(
+            { outgoingHeaders: headers, fileCount: filePromises.length },
+            "Forwarding multipart to upstream"
+          );
 
+          // Do the request
           let upstreamResp;
           try {
             upstreamResp = await fetch(upstreamUrl, {
               method: req.method,
               headers,
-              body: form,
+              body: bodyToSend,
               redirect: "manual",
             });
           } catch (err) {
+            // If undici raises a content-length mismatch despite our precautions, try again chunked (no content-length).
             const msg = String(err && err.message ? err.message : err);
             if (
               msg.includes(
@@ -242,28 +280,42 @@ app.use(async (req, res) => {
                 { err, headers },
                 "Content-Length mismatch; retrying without content-length (chunked)"
               );
-              delete headers["content-length"];
               try {
-                upstreamResp = await fetch(upstreamUrl, {
-                  method: req.method,
-                  headers,
-                  body: form,
-                  redirect: "manual",
-                });
+                // remove content-length and retry with a fresh form or buffered content if we have it
+                delete headers["content-length"];
+                // if bodyToSend was a buffer, we can safely re-send it; otherwise we must reconstruct the form
+                if (Buffer.isBuffer(bodyToSend)) {
+                  upstreamResp = await fetch(upstreamUrl, {
+                    method: req.method,
+                    headers,
+                    body: bodyToSend,
+                    redirect: "manual",
+                  });
+                } else {
+                  // we streamed previously and it's now consumed — rebuild a new FormData from the same buffers
+                  // Reconstruct form from saved fields: we already appended buffers to "form" earlier,
+                  // but form has been consumed — easiest pragmatic approach is to error out here and log details.
+                  logger.error(
+                    "Streamed form was consumed and cannot be retried; please resubmit the upload"
+                  );
+                  throw err;
+                }
               } catch (err2) {
                 logger.error(
                   { err2 },
                   "Retry without content-length also failed"
                 );
-                throw err2; // will be caught by outer try/catch
+                throw err2;
               }
             } else {
+              // Other error — bubble up
               throw err;
             }
           }
 
           // Relay status and headers
           upstreamResp.headers.forEach((v, k) => {
+            // skip hop-by-hop headers
             if (
               [
                 "content-encoding",
