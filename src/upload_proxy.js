@@ -85,7 +85,15 @@ app.use(async (req, res) => {
       contentType.startsWith("multipart/form-data")
     ) {
       // We must parse the multipart body
-      const bb = new Busboy({ headers: req.headers });
+      // create a Busboy instance in a way that works for either constructor or factory
+      let bb;
+      try {
+        // prefer constructor if it works
+        bb = new Busboy({ headers: req.headers });
+      } catch (err) {
+        // if "Busboy is not a constructor", try calling as a factory
+        bb = Busboy({ headers: req.headers });
+      }
       const form = new FormData();
 
       // collect form fields and files
