@@ -209,7 +209,8 @@ app.use(async (req, res) => {
             res.setHeader(k, v);
           });
           res.status(upstreamResp.status);
-          const bodyBuffer = await upstreamResp.buffer();
+          const arrayBuf = await upstreamResp.arrayBuffer();
+          const bodyBuffer = Buffer.from(arrayBuf);
           res.send(bodyBuffer);
         } catch (err) {
           logger.error({ err }, "Failed to forward multipart request");
@@ -251,7 +252,8 @@ app.use(async (req, res) => {
       res.setHeader(k, v);
     });
     res.status(upstreamResp2.status);
-    const body2 = await upstreamResp2.buffer();
+    const arrayBuf2 = await upstreamResp2.arrayBuffer();
+    const body2 = Buffer.from(arrayBuf2);
     res.send(body2);
   } catch (err) {
     logger.error({ err }, "Unexpected error in proxy");
